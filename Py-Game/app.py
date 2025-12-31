@@ -1,8 +1,8 @@
-import os
 import pygame
 import random
 import time
 import buttons
+import mole
 
 # Setup of the Display Window
 pygame.init()
@@ -16,15 +16,16 @@ main_menu = True
 game_paused = False
 menu_state = "main"
 
-# Gameplay Variables:
-background_color = (124, 252, 0)
-grid_size = 4
+# Game Variables:
 cell_size = 150
-mole_size = 100
 grid_spacing = 10
-mole_time = 1
-game_time = 60
 hole_color = (139,69,19)
+score = 0
+start_time = 0
+game_time = 60
+mole_spawn_time = 0.8
+mole_change_time = 0
+current_visible_mole = None
 
 # Define Fonts:
 font = pygame.font.SysFont("arialblack", 40)
@@ -42,7 +43,7 @@ back_img = pygame.image.load("Sprites/Back_Button.png").convert_alpha()
 # Load Game Sprites:
 good_mole_img = pygame.image.load("Sprites/Good_Mole.png").convert_alpha()
 bad_mole_img = pygame.image.load("Sprites/Bad_Mole.png").convert_alpha()
-fist_img = pygame.image.load("Sprites/fist.png").convert_alpha()
+hammer_img = pygame.image.load("Sprites/hammer_cursor.png").convert_alpha()
 
 # Create Button Instances:
 play_button = buttons.Buttons(600, 360, play_img, 1.5)
@@ -51,7 +52,9 @@ exit_button = buttons.Buttons(850, 360, exit_img, 1.5)
 back_button = buttons.Buttons(600, 460, back_img, 1.5)
 
 # Create Game Instances:
-fist_img = pygame.transform.scale(fist_img, (50, 50))
+good_mole = mole.Mole(0, 0, good_mole_img, 0.25, 'good')
+bad_mole = mole.Mole(0, 0, bad_mole_img, 0.25, 'bad')
+hammer_img = pygame.transform.scale(hammer_img, (75, 75))
 
 # Game Functions:
 
@@ -59,35 +62,44 @@ fist_img = pygame.transform.scale(fist_img, (50, 50))
 def draw_text(text, font, text_col, x, y):
     img = font.render(text, True, text_col)
     screen.blit(img, (x,y))
-
-
-# This function will draw a matrix of the grid
-# TODO: Fix the alignment of the grid
+    
+# This function will draw the game grid:
 def draw_grid():
-    for row in range(grid_size):
-        for col in range(grid_size):
-            x = col * (cell_size + grid_spacing)
-            y = row * (cell_size + grid_spacing)
+    screen_width, screen_height = screen.get_size()
+    
+    # Calculate the total grid size of a 4x4 grid/matrix:
+    num_cells = 4
+    grid_width = num_cells * cell_size + (num_cells - 1) * grid_spacing
+    grid_height = num_cells * cell_size + (num_cells - 1) * grid_spacing
+    
+    # Calculate the offset to center the grid on the screen:
+    offset_x = (screen_width - grid_width) // 2
+    offset_y = (screen_height - grid_height) // 2
+    
+    for row in range(4):
+        for col in range(4):
+            x = col * (cell_size + grid_spacing) + offset_x
+            y = row * (cell_size + grid_spacing) + offset_y
             pygame.draw.rect(screen, hole_color, (x, y, cell_size, cell_size))
- 
-# TODO: DEBUG THE FOLLOWING TWO FUNCTIONS            
-def draw_good_moles(mole_position):
-    row = mole_position
-    col = mole_position
-    x = col * (cell_size + grid_spacing) + (cell_size - mole_size) // 2
-    y = row * (cell_size + grid_spacing) + (cell_size - mole_size) // 2
-    screen.bilt(good_mole_img, (x, y))
 
-def draw_bad_moles(mole_postion):
-    row = mole_postion
-    col = mole_postion
-    x = col * (cell_size + grid_spacing) + (cell_size - mole_size) // 2
-    y = row * (cell_size + grid_spacing) + (cell_size - mole_size) // 2
-    screen.bilt(bad_mole_img, (x, y))
+# This function will will get the grid position based on mouse coordinates
+def get_grid_position(mouse_pos, offset_x, offset_y):
+    x,y = mouse_pos
+    col = (x - offset_x) // (cell_size + grid_spacing)
+    row = (y - offset_y) // (cell_size + grid_spacing)
+    
+    # Ensure the click is within the grid bounds:
+    if (0 <= row < 4) and (0 <= col < 4):
+        return row, col
+    else:
+        return None
 
-# TODO: WORK ON THIS FUNCTION
-def get_cell_from_mouse_pos(pos):
-    pass
+# This function will will get the pixel position of a given grid cell:
+def get_cell_pixel_position(row, col, offset_x, offset_y):
+    x = col * (cell_size + grid_spacing) + offset_x
+    y = row * (cell_size + grid_spacing) + offset_y
+    return x, y
+    
     
 # Code for running the game
 while running:
@@ -121,11 +133,84 @@ while running:
                 menu_state = "main"
         
         if menu_state == "play":
-            screen.fill(background_color)
+            # Initialize game state on first entry
+            if start_time == 0:
+                start_time = time.time()
+                score = 0
+                mole_change_time = time.time()
+                current_visible_mole = None  # Track which mole is visible
+            
+            screen.fill((124, 252, 0))
             draw_grid()
             
-        
-    # Event Handler for Quitting the Game
+            # Calculate screen center offsets for grid
+            screen_width, screen_height = screen.get_size()
+            grid_width = 4 * cell_size + 3 * grid_spacing
+            grid_height = 4 * cell_size + 3 * grid_spacing
+            offset_x = (screen_width - grid_width) // 2
+            offset_y = (screen_height - grid_height) // 2
+            
+            # Get current time and calculate remaining time
+            current_time = time.time()
+            elapsed_time = current_time - start_time
+            remaining_time = game_time - elapsed_time
+            
+            # Switch to results screen if time is up
+            if remaining_time <= 0:
+                menu_state = "results"
+            
+            # Spawn new mole at intervals
+            if current_time - mole_change_time > mole_spawn_time:
+                mole_row = random.randint(0, 3)
+                mole_col = random.randint(0, 3)
+                mole_type = random.choice(['good', 'bad'])  # Randomly select mole type
+                mole_x, mole_y = get_cell_pixel_position(mole_row, mole_col, offset_x, offset_y)
+                mole_x += (cell_size - good_mole.image.get_width()) // 2
+                mole_y += (cell_size - good_mole.image.get_height()) // 2
+                
+                # Update the appropriate mole position
+                if mole_type == 'good':
+                    good_mole.rect.topleft = (mole_x, mole_y)
+                    current_visible_mole = 'good'
+                else:
+                    bad_mole.rect.topleft = (mole_x, mole_y)
+                    current_visible_mole = 'bad'
+                
+                mole_change_time = current_time
+            
+            # Draw the currently visible mole
+            if current_visible_mole == 'good':
+                good_mole.draw(screen)
+            elif current_visible_mole == 'bad':
+                bad_mole.draw(screen)
+            
+            # Handle mouse clicks
+            for event in pygame.event.get():
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mouse_pos = pygame.mouse.get_pos()
+                    if current_visible_mole == 'good' and good_mole.is_clicked(mouse_pos):
+                        score += 1
+                        current_visible_mole = None  # Hide mole immediately
+                    elif current_visible_mole == 'bad' and bad_mole.is_clicked(mouse_pos):
+                        score -= 1
+                        current_visible_mole = None  # Hide mole immediately
+                if event.type == pygame.QUIT:
+                    running = False
+            
+            # Draw fist cursor
+            mouse_pos = pygame.mouse.get_pos()
+            fist_rect = hammer_img.get_rect(center=mouse_pos)
+            screen.blit(hammer_img, fist_rect.topleft)
+            
+            # Display timer
+            timer_text = font.render(f"Time: {max(0, int(remaining_time))}s", True, txt_color)
+            screen.blit(timer_text, (20, 20))
+            
+            # Display score
+            score_text = font.render(f"Score: {score}", True, txt_color)
+            screen.blit(score_text, (20, 70))
+                
+    # Event Handler for Quitting the Game + Other Key Binds:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -136,5 +221,6 @@ while running:
 
     #clock.tick(60) # Run the game at 60 FPS
     clock.tick(30) # Run the game at 30 FPS (Temp)
+    clock = pygame.time.Clock()
 
 pygame.quit()
