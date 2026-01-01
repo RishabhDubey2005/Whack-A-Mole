@@ -209,6 +209,16 @@ while running:
             # Display score
             score_text = font.render(f"Score: {score}", True, txt_color)
             screen.blit(score_text, (20, 70))
+            
+        if menu_state == "results":
+            draw_text("Game Over!", font, txt_color, 550, 250)
+            draw_text(f"Final Score: {score}", font, txt_color, 525, 320)
+        
+            
+            if (back_button.draw(screen)):
+                menu_state = "main"
+                start_time = 0  # Reset game state for next playthrough
+                
                 
     # Event Handler for Quitting the Game + Other Key Binds:
     for event in pygame.event.get():

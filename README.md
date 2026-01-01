@@ -24,3 +24,7 @@ Play Screen:
 Result Screen:
     - Activated once the timer goes off in the Play Screen
     - Should Provide a button to either play again or exit the application
+
+Future Updates:
+    - Improve the game's UI/UX
+    - Introduce another mode that will make the game challenging
